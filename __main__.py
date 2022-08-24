@@ -1,7 +1,6 @@
 from json import dumps as encodeJson, loads as decodeJson
 import sys
 import os
-from database import db
 from clases import Object
 
 
@@ -40,16 +39,6 @@ def fold(obj):
     return ret
 
 
-File = Object(
-    objects=Object(
-        get=lambda uuid: db.getRow('documents', lambda doc: str(doc.uuid) == str(uuid)),
-        first=lambda: db.getRows('documents')[0],
-        last=lambda: db.getRows('documents')[-1],
-        all=lambda: db.getRows('documents')
-    )
-)
-
-
 # CLI
 if __name__ == '__main__':
     from sys import argv
@@ -59,31 +48,30 @@ if __name__ == '__main__':
         from itertools import product as combinator
         input = attr[0]
         output = attr[1] if len(attr) > 1 else 'out_'+input
-        content = readJSON(input)
-        # try:
-        #     with open(input, 'r') as file:
-        #         content = decodeJson(file.read())
-        # except Exception:
-        #     print(mode, ' FAILED')
+        contentData = readJSON(input)
         base = {}
         variations = []
-        for key, value in unfold(content).items():
-            if type(value) == list:
-                variations.append([[key, v] for v in value])
-            else:
-                base[key] = value
         cases = []
-        for case in combinator(*variations):
-            tmp = {k: v for k, v in case}
-            tmp = {**base, **tmp}
-            cases.append(fold(tmp))
+        if type(contentData) == dict:
+            contentData = [contentData]
+        for content in contentData:
+            for key, value in unfold(content).items():
+                if type(value) == list:
+                    variations.append([[key, v] for v in value])
+                else:
+                    base[key] = value
+            for case in combinator(*variations):
+                tmp = {k: v for k, v in case}
+                tmp = {**base, **tmp}
+                cases.append(fold(tmp))
         file = open(output, 'w+')
         file.write(encodeJson({'documents': cases}, indent=4))
         file.close()
     elif mode == 'runTest' and len(attr) > 0:
         from sys import argv
-        from __main__ import File
+        from database import db
         from openpyxl import Workbook
+        from openpyxl.styles import NamedStyle, PatternFill, Font, Alignment
         opname = attr[0].split('.py')[0]
         fileOut = f'./{opname}_test.xlsx'
         configFile = attr[1] if len(attr) > 1 else None
@@ -94,7 +82,7 @@ if __name__ == '__main__':
         report = []
         exec(f'import {opname} as operation_test')
         disablePrint()
-        for fil in File.objects.all():
+        for fil in db.getRows('documents'):
             ret = operation_test.run(fil.uuid)
             tmp = fil.debug(ret)
             tmp = tmp if configFile is None else {k: tmp[v] for k, v in configFile.items() if v in tmp}
@@ -113,6 +101,23 @@ if __name__ == '__main__':
             fr = ws['B2']
             ws.freeze_panes = fr
             ws.auto_filter.ref = ws.dimensions
+            custom_header = NamedStyle(name="custom_header")
+            custom_header.fill = PatternFill("solid", fgColor="000000")
+            custom_header.font = Font(color="FFFFFF")
+            custom_header.alignment = Alignment(vertical="center")
+            normal_cell = NamedStyle(name="normal_cell")
+            normal_cell.alignment = Alignment(vertical="center")
+            firstRow = ws['1']
+            for cell in firstRow:
+                cell.style = custom_header
+            ws.row_dimensions[1].height = 23
+            for i, row in enumerate([c for c in ws.iter_rows()][1:]):
+                ws.row_dimensions[i+2].height = 23
+                for cell in row:
+                    cell.style = normal_cell
+            for coll in ws.columns:
+                length = max(len(str(cell.value)) for cell in coll)
+                ws.column_dimensions[coll[0].column_letter].width = length if length > 15 else 15
             wb.save(fileOut)
     elif mode == 'export' and len(attr) > 0:
         import re
@@ -136,3 +141,13 @@ if __name__ == '__main__':
                 buildedFile.append(line)
         with open(f'{op}.export', 'w+') as file:
             file.write('\n'.join(buildedFile))
+else:
+    from database import db
+    File = Object(
+        objects=Object(
+            get=lambda uuid: db.getRow('documents', lambda doc: str(doc.uuid) == str(uuid)),
+            first=lambda: db.getRows('documents')[0],
+            last=lambda: db.getRows('documents')[-1],
+            all=lambda: db.getRows('documents')
+        )
+    )
