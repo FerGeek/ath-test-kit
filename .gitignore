@@ -1,0 +1,8 @@
+*.py
+*.json
+*.xlsx
+*.export
+**/_*
+!__main__.py
+!clases.py
+!database.py
